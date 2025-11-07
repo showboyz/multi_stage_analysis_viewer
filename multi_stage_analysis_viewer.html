@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>멀티 스테이지 의료 분석 뷰어</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .tab-button {
+            transition: all 0.3s ease;
+        }
+        .tab-button.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 4px solid #667eea;
+        }
+        .tab-button:not(.active) {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        .chart-container {
+            height: 350px;
+        }
+        .small-chart {
+            height: 200px;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- 헤더 -->
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-bold text-white mb-4">🏥 멀티 스테이지 의료 분석 뷰어</h1>
+            <p class="text-xl text-purple-200">여러 스테이지를 비교하고 진행 상황을 추적하세요</p>
+
+            <!-- 파일 업로드 -->
+            <div class="mt-6">
+                <input type="file" id="fileInput" accept=".json" class="hidden">
+                <button onclick="document.getElementById('fileInput').click()"
+                        class="bg-white text-purple-600 px-8 py-4 rounded-xl font-bold text-lg shadow-2xl hover:shadow-3xl hover:scale-105 transition-all">
+                    📁 JSON 파일 선택
+                </button>
+            </div>
+
+            <!-- 환자 정보 -->
+            <div class="mt-6 bg-white/20 backdrop-blur-sm rounded-lg p-4 inline-block" id="patient-info" style="display: none;">
+                <div class="grid grid-cols-4 gap-6 text-white">
+                    <div>
+                        <div class="text-sm opacity-75">환자명</div>
+                        <div class="text-2xl font-bold" id="patient-name">-</div>
+                    </div>
+                    <div>
+                        <div class="text-sm opacity-75">게임</div>
+                        <div class="text-2xl font-bold" id="game-name">-</div>
+                    </div>
+                    <div>
+                        <div class="text-sm opacity-75">총 스테이지</div>
+                        <div class="text-2xl font-bold" id="total-stages">0개</div>
+                    </div>
+                    <div>
+                        <div class="text-sm opacity-75">평균 점수</div>
+                        <div class="text-2xl font-bold text-green-300" id="avg-score">0점</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 탭 네비게이션 -->
+        <div id="tab-navigation" class="bg-white/10 backdrop-blur-sm rounded-t-2xl p-2 flex gap-2" style="display: none;">
+            <button class="tab-button active flex-1 py-4 px-6 rounded-lg font-bold text-lg" data-tab="overview">
+                📊 전체 비교
+            </button>
+            <button class="tab-button flex-1 py-4 px-6 rounded-lg font-bold text-lg" data-tab="stage1">
+                Stage 1
+            </button>
+            <button class="tab-button flex-1 py-4 px-6 rounded-lg font-bold text-lg" data-tab="stage2">
+                Stage 2
+            </button>
+            <button class="tab-button flex-1 py-4 px-6 rounded-lg font-bold text-lg" data-tab="stage3">
+                Stage 3
+            </button>
+        </div>
+
+        <!-- 탭 컨텐츠 -->
+        <div id="tab-content" class="bg-white rounded-b-2xl shadow-2xl p-8" style="display: none;">
+            <!-- 전체 비교 탭 -->
+            <div id="overview-tab" class="tab-pane">
+                <!-- 전체 평균 -->
+                <div class="mb-8">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">🏥 6개 평가 영역 전체 평균</h3>
+                    <div class="chart-container">
+                        <canvas id="overviewRadarChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 점수 비교 테이블 -->
+                <div class="mb-8">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">📊 평가 영역별 평균 점수</h3>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg mb-4">
+                        <h4 class="font-semibold text-gray-800 mb-2">💡 해석 가이드</h4>
+                        <div class="text-sm text-gray-700 space-y-1">
+                            <p>• 모든 스테이지와 BPM의 평균 점수를 영역별로 보여줍니다</p>
+                            <p>• <span class="font-bold text-green-600">90점 이상: 우수</span> | <span class="font-bold text-blue-600">80-89점: 양호</span> | <span class="font-bold text-yellow-600">70-79점: 보통</span> | <span class="font-bold text-orange-600">60-69점: 미흡</span> | <span class="font-bold text-red-600">60점 미만: 개선 필요</span></p>
+                            <p>• 점수가 낮은 영역을 중점적으로 훈련하면 효과적입니다</p>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse" id="comparison-table">
+                            <thead>
+                                <tr class="bg-gradient-to-r from-blue-100 to-indigo-100">
+                                    <th class="border border-gray-300 p-4 text-left font-bold text-gray-800">평가 영역</th>
+                                    <th class="border border-gray-300 p-4 text-center font-bold text-gray-800">평균 점수</th>
+                                    <th class="border border-gray-300 p-4 text-center font-bold text-gray-800">등급</th>
+                                </tr>
+                            </thead>
+                            <tbody id="comparison-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stage 1 탭 -->
+            <div id="stage1-tab" class="tab-pane" style="display: none;">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">Stage 1 상세 분석</h2>
+                    <div class="flex gap-4 items-center">
+                        <span class="text-sm font-semibold text-gray-600">비교할 BPM 선택:</span>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="1" data-bpm="80" checked>
+                            <span class="font-semibold">BPM 80</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="1" data-bpm="100" checked>
+                            <span class="font-semibold">BPM 100</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="stage1-content"></div>
+            </div>
+
+            <!-- Stage 2 탭 -->
+            <div id="stage2-tab" class="tab-pane" style="display: none;">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">Stage 2 상세 분석</h2>
+                    <div class="flex gap-4 items-center">
+                        <span class="text-sm font-semibold text-gray-600">비교할 BPM 선택:</span>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="2" data-bpm="80" checked>
+                            <span class="font-semibold">BPM 80</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="2" data-bpm="100" checked>
+                            <span class="font-semibold">BPM 100</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="stage2-content"></div>
+            </div>
+
+            <!-- Stage 3 탭 -->
+            <div id="stage3-tab" class="tab-pane" style="display: none;">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">Stage 3 상세 분석</h2>
+                    <div class="flex gap-4 items-center">
+                        <span class="text-sm font-semibold text-gray-600">비교할 BPM 선택:</span>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="3" data-bpm="80" checked>
+                            <span class="font-semibold">BPM 80</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="stage-bpm-filter w-4 h-4" data-stage="3" data-bpm="100" checked>
+                            <span class="font-semibold">BPM 100</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="stage3-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+        let charts = {};
+
+        // 파일 업로드 핸들러
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    allData = Array.isArray(data) ? data : [data];
+                    processData();
+                } catch (error) {
+                    alert('파일 로드 실패: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function processData() {
+            if (allData.length === 0) return;
+
+            // 환자 정보 표시
+            const first = allData[0];
+            document.getElementById('patient-name').textContent = first.name || '-';
+            document.getElementById('game-name').textContent = first.chapter || first.test_name || '-';
+            document.getElementById('total-stages').textContent = allData.length + '개';
+            document.getElementById('patient-info').style.display = 'block';
+
+            // 탭 표시
+            document.getElementById('tab-navigation').style.display = 'flex';
+            document.getElementById('tab-content').style.display = 'block';
+
+            // 전체 비교 탭 렌더링
+            renderOverviewTab();
+        }
+
+        function parseArrayField(field) {
+            if (Array.isArray(field)) return field;
+            if (typeof field === 'string') {
+                try {
+                    // 먼저 단일 파싱 시도
+                    let parsed = JSON.parse(field);
+                    // 파싱 결과가 문자열이면 다시 파싱 (이중 인코딩)
+                    if (typeof parsed === 'string') {
+                        parsed = JSON.parse(parsed);
+                    }
+                    // 결과가 배열인지 확인
+                    if (Array.isArray(parsed)) {
+                        return parsed;
+                    }
+                    return [];
+                } catch (e) {
+                    console.error('파싱 오류:', e, 'field:', field);
+                    return [];
+                }
+            }
+            return [];
+        }
+
+        // 준비/마무리 자세 구간 제거 함수
+        function trimPrepAndFinish(dataArray, threshold = 150) {
+            if (dataArray.length === 0) return dataArray;
+
+            // 앞에서부터 threshold 이상인 첫 번째 인덱스 찾기
+            let startIdx = 0;
+            for (let i = 0; i < Math.min(5, dataArray.length); i++) {
+                if (Math.abs(dataArray[i]) > threshold) {
+                    startIdx = i + 1; // 이상치 다음부터 시작
+                    break;
+                }
+            }
+
+            // 뒤에서부터 threshold 이상인 마지막 인덱스 찾기
+            let endIdx = dataArray.length;
+            for (let i = dataArray.length - 1; i >= Math.max(0, dataArray.length - 5); i--) {
+                if (Math.abs(dataArray[i]) > threshold) {
+                    endIdx = i; // 이상치 전까지
+                    break;
+                }
+            }
+
+            // 유효한 구간만 반환
+            if (startIdx < endIdx) {
+                return dataArray.slice(startIdx, endIdx);
+            }
+
+            return dataArray;
+        }
+
+        function calculateMedicalScores(moveErrs, balanceErrs, speedErrs) {
+            // 배열 검증
+            if (!Array.isArray(moveErrs) || moveErrs.length === 0) {
+                console.error('moveErrs가 유효한 배열이 아닙니다:', moveErrs);
+                return { movement: 0, balance: 0, speedConsistency: 0, focus: 0, learning: 0, strength: 0 };
+            }
+            if (!Array.isArray(balanceErrs) || balanceErrs.length === 0) {
+                console.error('balanceErrs가 유효한 배열이 아닙니다:', balanceErrs);
+                return { movement: 0, balance: 0, speedConsistency: 0, focus: 0, learning: 0, strength: 0 };
+            }
+            if (!Array.isArray(speedErrs) || speedErrs.length === 0) {
+                console.error('speedErrs가 유효한 배열이 아닙니다:', speedErrs);
+                return { movement: 0, balance: 0, speedConsistency: 0, focus: 0, learning: 0, strength: 0 };
+            }
+
+            const moveAvg = moveErrs.reduce((a,b) => a+b, 0) / moveErrs.length;
+            const movementScore = Math.max(0, Math.min(100, 100 - moveAvg));
+
+            const balanceAbsAvg = balanceErrs.reduce((sum, val) => sum + Math.abs(val), 0) / balanceErrs.length;
+            const balanceScore = Math.max(0, Math.min(100, 100 - balanceAbsAvg));
+
+            const speedAvg = speedErrs.reduce((a,b) => a+b, 0) / speedErrs.length;
+            const speedVariance = speedErrs.reduce((sum, val) => sum + Math.pow(val - speedAvg, 2), 0) / speedErrs.length;
+            const speedStdDev = Math.sqrt(speedVariance);
+            const speedConsistencyScore = Math.max(0, Math.min(100, 100 - speedStdDev));
+
+            let consecutiveFails = 0;
+            let maxConsecutiveFails = 0;
+            moveErrs.forEach(err => {
+                if (err > 50) {
+                    consecutiveFails++;
+                    maxConsecutiveFails = Math.max(maxConsecutiveFails, consecutiveFails);
+                } else {
+                    consecutiveFails = 0;
+                }
+            });
+            const moveStdDev = Math.sqrt(moveErrs.reduce((sum, val) => sum + Math.pow(val - moveAvg, 2), 0) / moveErrs.length);
+            const focusScore = Math.max(0, Math.min(100, 100 - (maxConsecutiveFails * 5 + moveStdDev * 0.5)));
+
+            const half = Math.floor(moveErrs.length / 2);
+            const firstAvg = moveErrs.slice(0, half).reduce((a,b) => a+b, 0) / half;
+            const secondAvg = moveErrs.slice(half).reduce((a,b) => a+b, 0) / (moveErrs.length - half);
+            const improvement = firstAvg - secondAvg;
+            const learningScore = Math.max(0, Math.min(100, 100 + improvement * 2));
+
+            const fatigue = secondAvg - firstAvg;
+            const strengthScore = Math.max(0, Math.min(100, 100 - fatigue));
+
+            return {
+                movement: movementScore,
+                balance: balanceScore,
+                speedConsistency: speedConsistencyScore,
+                focus: focusScore,
+                learning: learningScore,
+                strength: strengthScore
+            };
+        }
+
+        function getGrade(score) {
+            if (score >= 90) return { grade: 'S', color: 'text-green-600', bg: 'bg-green-50' };
+            if (score >= 80) return { grade: 'A', color: 'text-blue-600', bg: 'bg-blue-50' };
+            if (score >= 70) return { grade: 'B', color: 'text-yellow-600', bg: 'bg-yellow-50' };
+            if (score >= 60) return { grade: 'C', color: 'text-orange-600', bg: 'bg-orange-50' };
+            return { grade: 'D', color: 'text-red-600', bg: 'bg-red-50' };
+        }
+
+        function renderOverviewTab() {
+            // 모든 레코드의 점수 계산
+            const allScores = allData.map((record, idx) => {
+                console.log(`레코드 ${idx}:`, record);
+                console.log(`move_err 타입:`, typeof record.move_err, record.move_err);
+
+                // 데이터 파싱 및 준비/마무리 구간 제거
+                let moveErrs = parseArrayField(record.move_err);
+                let balanceErrs = parseArrayField(record.balance_err);
+                let speedErrs = parseArrayField(record.speed_err);
+
+                console.log(`파싱 전 moveErrs 길이:`, moveErrs.length);
+
+                // 준비/마무리 자세 제거 (threshold = 150)
+                moveErrs = trimPrepAndFinish(moveErrs, 150);
+                balanceErrs = trimPrepAndFinish(balanceErrs, 150);
+                speedErrs = trimPrepAndFinish(speedErrs, 150);
+
+                console.log(`트리밍 후 moveErrs 길이:`, moveErrs.length);
+                console.log(`파싱된 moveErrs:`, moveErrs);
+                console.log(`파싱된 balanceErrs:`, balanceErrs);
+                console.log(`파싱된 speedErrs:`, speedErrs);
+
+                const scores = calculateMedicalScores(moveErrs, balanceErrs, speedErrs);
+                return {
+                    stage: record.stage,
+                    bpm: record.bpm,
+                    scores: scores,
+                    label: `Stage ${record.stage} (BPM ${record.bpm})`
+                };
+            });
+
+            // 레이더 차트 렌더링 (전체 평균)
+            renderOverviewRadarChart(allScores);
+
+            // 비교 테이블 렌더링 (평균)
+            renderComparisonTable(allScores);
+
+            // 평균 점수 업데이트
+            const avgScore = allScores.reduce((sum, s) => {
+                const avg = (s.scores.movement + s.scores.balance + s.scores.speedConsistency +
+                             s.scores.focus + s.scores.learning + s.scores.strength) / 6;
+                return sum + avg;
+            }, 0) / allScores.length;
+            document.getElementById('avg-score').textContent = avgScore.toFixed(0) + '점';
+        }
+
+        function renderOverviewRadarChart(allScores) {
+            const ctx = document.getElementById('overviewRadarChart').getContext('2d');
+
+            if (charts.overviewRadar) {
+                charts.overviewRadar.destroy();
+            }
+
+            // 전체 평균 계산
+            const avgScores = {
+                movement: 0,
+                balance: 0,
+                speedConsistency: 0,
+                focus: 0,
+                learning: 0,
+                strength: 0
+            };
+
+            allScores.forEach(scoreData => {
+                avgScores.movement += scoreData.scores.movement;
+                avgScores.balance += scoreData.scores.balance;
+                avgScores.speedConsistency += scoreData.scores.speedConsistency;
+                avgScores.focus += scoreData.scores.focus;
+                avgScores.learning += scoreData.scores.learning;
+                avgScores.strength += scoreData.scores.strength;
+            });
+
+            const count = allScores.length;
+            avgScores.movement /= count;
+            avgScores.balance /= count;
+            avgScores.speedConsistency /= count;
+            avgScores.focus /= count;
+            avgScores.learning /= count;
+            avgScores.strength /= count;
+
+            const datasets = [{
+                label: '전체 평균',
+                data: [
+                    avgScores.movement,
+                    avgScores.balance,
+                    avgScores.speedConsistency,
+                    avgScores.focus,
+                    avgScores.learning,
+                    avgScores.strength
+                ],
+                fill: true,
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderColor: 'rgb(59, 130, 246)',
+                pointBackgroundColor: 'rgb(59, 130, 246)',
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: 'rgb(59, 130, 246)',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                borderWidth: 3
+            }];
+
+            charts.overviewRadar = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['동작 정확도', '균형 능력', '속도 일관성', '집중력', '학습력', '근력/지구력'],
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { display: true, color: 'rgba(0, 0, 0, 0.1)' },
+                            grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                            pointLabels: { font: { size: 13, weight: 'bold' } },
+                            suggestedMin: 0,
+                            suggestedMax: 100,
+                            ticks: { stepSize: 20, callback: value => value + '점' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.r.toFixed(1) + '점';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderComparisonTable(allScores) {
+            const tbody = document.getElementById('comparison-tbody');
+
+            // 평가 영역 정의
+            const areas = [
+                { key: 'movement', name: '🎯 동작 정확도', desc: '동작의 정확성과 일치도' },
+                { key: 'balance', name: '⚖️ 균형 능력', desc: '좌우 균형과 안정성' },
+                { key: 'speedConsistency', name: '⏱️ 속도 일관성', desc: 'BPM 유지 능력' },
+                { key: 'focus', name: '🎯 집중력', desc: '지속적인 집중 유지' },
+                { key: 'learning', name: '📚 학습력', desc: '동작 개선 속도' },
+                { key: 'strength', name: '💪 근력/지구력', desc: '동작 지속 능력' }
+            ];
+
+            // 영역별 평균 계산
+            const avgScores = {};
+            areas.forEach(area => {
+                const sum = allScores.reduce((total, scoreData) => total + scoreData.scores[area.key], 0);
+                avgScores[area.key] = sum / allScores.length;
+            });
+
+            // 테이블 바디 생성
+            tbody.innerHTML = '';
+            areas.forEach(area => {
+                const score = avgScores[area.key];
+                const gradeInfo = getGrade(score);
+                const row = `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="border border-gray-300 p-4">
+                            <div class="font-bold text-gray-800">${area.name}</div>
+                            <div class="text-xs text-gray-500 mt-1">${area.desc}</div>
+                        </td>
+                        <td class="border border-gray-300 p-4 text-center ${gradeInfo.bg}">
+                            <span class="font-bold text-2xl text-gray-800">${score.toFixed(1)}</span>
+                            <span class="text-sm text-gray-500">점</span>
+                        </td>
+                        <td class="border border-gray-300 p-4 text-center ${gradeInfo.bg}">
+                            <span class="font-bold text-xl ${gradeInfo.color}">${gradeInfo.grade}</span>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        }
+
+
+        // 탭 전환
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const targetTab = this.dataset.tab;
+
+                // 모든 탭 버튼과 패널 비활성화
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+
+                // 선택된 탭 활성화
+                this.classList.add('active');
+                document.getElementById(targetTab + '-tab').style.display = 'block';
+
+                // Stage 탭이면 데이터 로드
+                if (targetTab !== 'overview') {
+                    const stageNum = parseInt(targetTab.replace('stage', ''));
+                    renderStageDetailWithBPMs(stageNum);
+                }
+            });
+        });
+
+        // BPM 체크박스 변경 이벤트
+        document.querySelectorAll('.stage-bpm-filter').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const stage = parseInt(this.dataset.stage);
+                renderStageDetailWithBPMs(stage);
+            });
+        });
+
+        function renderStageDetailWithBPMs(stage) {
+            // 선택된 BPM 체크박스 확인
+            const selectedBPMs = [];
+            document.querySelectorAll(`.stage-bpm-filter[data-stage="${stage}"]:checked`).forEach(checkbox => {
+                selectedBPMs.push(parseInt(checkbox.dataset.bpm));
+            });
+
+            if (selectedBPMs.length === 0) {
+                document.getElementById(`stage${stage}-content`).innerHTML = '<p class="text-gray-500 text-center py-8">BPM을 하나 이상 선택해주세요.</p>';
+                return;
+            }
+
+            // 선택된 BPM의 데이터 가져오기
+            const stageDataList = selectedBPMs.map(bpm => {
+                const data = allData.find(d => d.stage === stage && d.bpm === bpm);
+                return data ? { bpm, data } : null;
+            }).filter(item => item !== null);
+
+            if (stageDataList.length === 0) {
+                document.getElementById(`stage${stage}-content`).innerHTML = '<p class="text-gray-500 text-center py-8">해당 데이터가 없습니다.</p>';
+                return;
+            }
+
+            // 중첩 그래프 렌더링
+            renderStageDetailOverlay(stage, stageDataList);
+        }
+
+        function renderStageDetailOverlay(stage, stageDataList) {
+            const container = document.getElementById(`stage${stage}-content`);
+
+            // 첫 번째 데이터로 기본 정보 표시
+            const firstData = stageDataList[0].data;
+            const firstMoveErrs = parseArrayField(firstData.move_err);
+
+            container.innerHTML = `
+                <!-- 기본 정보 -->
+                <div class="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">📋 기본 정보</h3>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="p-4 bg-white rounded-lg shadow">
+                            <div class="text-xs text-gray-500 mb-1">비교 데이터</div>
+                            <div class="text-2xl font-bold text-blue-600">${stageDataList.length}개</div>
+                        </div>
+                        <div class="p-4 bg-white rounded-lg shadow">
+                            <div class="text-xs text-gray-500 mb-1">선택된 BPM</div>
+                            <div class="text-lg font-bold text-blue-600">${stageDataList.map(d => d.bpm).join(', ')}</div>
+                        </div>
+                        <div class="p-4 bg-white rounded-lg shadow">
+                            <div class="text-xs text-gray-500 mb-1">게임 시간</div>
+                            <div class="text-2xl font-bold text-blue-600">${firstData.gametime ? firstData.gametime.split(' ')[1] : '-'}</div>
+                        </div>
+                        <div class="p-4 bg-white rounded-lg shadow">
+                            <div class="text-xs text-gray-500 mb-1">난이도</div>
+                            <div class="text-2xl font-bold text-blue-600">${firstData.status || '-'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 동작 오차 그래프 -->
+                <div class="bg-white rounded-2xl p-6 shadow-2xl mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800">🎯 동작 오차 (move_err)</h2>
+                            <p class="text-sm text-gray-500">동작의 정확도 - 낮을수록 정확한 동작</p>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">평균 오차</div>
+                                <div class="text-xl font-bold text-red-600" id="stage${stage}-move-avg">0</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">최대 오차</div>
+                                <div class="text-xl font-bold text-orange-600" id="stage${stage}-move-max">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="stage${stage}MoveChart"></canvas>
+                    </div>
+                    <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
+                        <div class="flex items-center gap-2 p-2 rounded bg-green-50">
+                            <div class="w-4 h-4 bg-green-500 rounded"></div>
+                            <span>우수 (오차 < 30)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-yellow-50">
+                            <div class="w-4 h-4 bg-yellow-500 rounded"></div>
+                            <span>보통 (30 ≤ 오차 < 60)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-red-50">
+                            <div class="w-4 h-4 bg-red-500 rounded"></div>
+                            <span>개선 필요 (오차 ≥ 60)</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                        <h3 class="font-semibold text-gray-800 mb-2">💡 해석 가이드</h3>
+                        <div class="text-sm text-gray-700 space-y-1" id="stage${stage}-move-comment">
+                            <p>• BPM별로 동작 오차 패턴을 비교하세요</p>
+                            <p>• 초록색 영역에 머물수록 정확한 동작입니다</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 균형 오차 그래프 -->
+                <div class="bg-white rounded-2xl p-6 shadow-2xl mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800">⚖️ 균형 오차 (balance_err)</h2>
+                            <p class="text-sm text-gray-500">좌우 균형 - 몸의 중심이 흔들리는 정도</p>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">평균 오차</div>
+                                <div class="text-xl font-bold text-purple-600" id="stage${stage}-balance-avg">0</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">표준편차</div>
+                                <div class="text-xl font-bold text-indigo-600" id="stage${stage}-balance-stddev">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="stage${stage}BalanceChart"></canvas>
+                    </div>
+                    <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
+                        <div class="flex items-center gap-2 p-2 rounded bg-green-50">
+                            <div class="w-4 h-4 bg-green-500 rounded"></div>
+                            <span>안정 (오차 < 20)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-yellow-50">
+                            <div class="w-4 h-4 bg-yellow-500 rounded"></div>
+                            <span>약간 흔들림 (20 ≤ 오차 < 40)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-red-50">
+                            <div class="w-4 h-4 bg-red-500 rounded"></div>
+                            <span>불안정 (오차 ≥ 40)</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+                        <h3 class="font-semibold text-gray-800 mb-2">💡 해석 가이드</h3>
+                        <div class="text-sm text-gray-700 space-y-1" id="stage${stage}-balance-comment">
+                            <p>• 0에 가까울수록 완벽한 좌우 균형입니다</p>
+                            <p>• 초록색 영역 내에서 유지되는지 확인하세요</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 속도 오차 그래프 -->
+                <div class="bg-white rounded-2xl p-6 shadow-2xl mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800">⏱️ 속도 오차 (speed_err)</h2>
+                            <p class="text-sm text-gray-500">동작 속도의 일관성 - BPM에 맞춰 하는지 평가</p>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">평균 오차</div>
+                                <div class="text-xl font-bold text-blue-600" id="stage${stage}-speed-avg">0</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-xs text-gray-500">표준편차</div>
+                                <div class="text-xl font-bold text-cyan-600" id="stage${stage}-speed-stddev">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="stage${stage}SpeedChart"></canvas>
+                    </div>
+                    <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
+                        <div class="flex items-center gap-2 p-2 rounded bg-green-50">
+                            <div class="w-4 h-4 bg-green-500 rounded"></div>
+                            <span>리듬감 우수 (오차 < 20)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-yellow-50">
+                            <div class="w-4 h-4 bg-yellow-500 rounded"></div>
+                            <span>보통 (20 ≤ 오차 < 40)</span>
+                        </div>
+                        <div class="flex items-center gap-2 p-2 rounded bg-red-50">
+                            <div class="w-4 h-4 bg-red-500 rounded"></div>
+                            <span>불규칙 (오차 ≥ 40)</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+                        <h3 class="font-semibold text-gray-800 mb-2">💡 해석 가이드</h3>
+                        <div class="text-sm text-gray-700 space-y-1" id="stage${stage}-speed-comment">
+                            <p>• 일정한 속도를 유지할수록 인지-운동 협응력이 좋습니다</p>
+                            <p>• BPM별 속도 패턴 차이를 비교해보세요</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 통계 데이터 계산 및 표시
+            calculateAndDisplayStats(stage, stageDataList);
+
+            // 중첩 시계열 그래프 생성
+            createOverlayTimeSeriesCharts(stage, stageDataList);
+        }
+
+        function calculateAndDisplayStats(stage, stageDataList) {
+            // 각 BPM 데이터의 통계 계산
+            const allMoveErrs = [];
+            const allBalanceErrs = [];
+            const allSpeedErrs = [];
+
+            stageDataList.forEach(item => {
+                let moveErrs = parseArrayField(item.data.move_err);
+                let balanceErrs = parseArrayField(item.data.balance_err);
+                let speedErrs = parseArrayField(item.data.speed_err);
+
+                // 준비/마무리 자세 제거
+                moveErrs = trimPrepAndFinish(moveErrs, 150);
+                balanceErrs = trimPrepAndFinish(balanceErrs, 150);
+                speedErrs = trimPrepAndFinish(speedErrs, 150);
+
+                allMoveErrs.push(...moveErrs);
+                allBalanceErrs.push(...balanceErrs);
+                allSpeedErrs.push(...speedErrs);
+            });
+
+            // 동작 오차 통계
+            const moveAvg = allMoveErrs.reduce((a, b) => a + b, 0) / allMoveErrs.length;
+            const moveMax = Math.max(...allMoveErrs);
+            document.getElementById(`stage${stage}-move-avg`).textContent = moveAvg.toFixed(1);
+            document.getElementById(`stage${stage}-move-max`).textContent = moveMax.toFixed(1);
+
+            // 균형 오차 통계
+            const balanceAvg = allBalanceErrs.reduce((a, b) => a + b, 0) / allBalanceErrs.length;
+            const balanceAbsAvg = allBalanceErrs.reduce((sum, val) => sum + Math.abs(val), 0) / allBalanceErrs.length;
+            const balanceVariance = allBalanceErrs.reduce((sum, val) => sum + Math.pow(val - balanceAvg, 2), 0) / allBalanceErrs.length;
+            const balanceStdDev = Math.sqrt(balanceVariance);
+            document.getElementById(`stage${stage}-balance-avg`).textContent = balanceAbsAvg.toFixed(1);
+            document.getElementById(`stage${stage}-balance-stddev`).textContent = balanceStdDev.toFixed(1);
+
+            // 속도 오차 통계
+            const speedAvg = allSpeedErrs.reduce((a, b) => a + b, 0) / allSpeedErrs.length;
+            const speedVariance = allSpeedErrs.reduce((sum, val) => sum + Math.pow(val - speedAvg, 2), 0) / allSpeedErrs.length;
+            const speedStdDev = Math.sqrt(speedVariance);
+            document.getElementById(`stage${stage}-speed-avg`).textContent = speedAvg.toFixed(1);
+            document.getElementById(`stage${stage}-speed-stddev`).textContent = speedStdDev.toFixed(1);
+        }
+
+        function renderStageDetail(stage, data) {
+            const container = document.getElementById(`stage${stage}-content`);
+
+            const moveErrs = parseArrayField(data.move_err);
+            const balanceErrs = parseArrayField(data.balance_err);
+            const speedErrs = parseArrayField(data.speed_err);
+            const scores = calculateMedicalScores(moveErrs, balanceErrs, speedErrs);
+
+            container.innerHTML = `
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">기본 정보</h3>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <div class="text-sm text-gray-500">BPM</div>
+                            <div class="text-2xl font-bold text-gray-800">${data.bpm}</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <div class="text-sm text-gray-500">프레임 수</div>
+                            <div class="text-2xl font-bold text-gray-800">${moveErrs.length}개</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <div class="text-sm text-gray-500">게임 시간</div>
+                            <div class="text-2xl font-bold text-gray-800">${data.gametime ? data.gametime.split(' ')[1] : '-'}</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <div class="text-sm text-gray-500">난이도</div>
+                            <div class="text-2xl font-bold text-gray-800">${data.status || '-'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">🏥 의료 평가 레이더 차트</h3>
+                    <div class="small-chart">
+                        <canvas id="stage${stage}RadarChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">📊 6개 영역 점수</h3>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                            <div class="text-xs text-gray-500 mb-1">동작 정확도</div>
+                            <div class="text-2xl font-bold text-blue-600">${scores.movement.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.movement).color}">${getGrade(scores.movement).grade}</div>
+                        </div>
+                        <div class="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                            <div class="text-xs text-gray-500 mb-1">균형 능력</div>
+                            <div class="text-2xl font-bold text-purple-600">${scores.balance.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.balance).color}">${getGrade(scores.balance).grade}</div>
+                        </div>
+                        <div class="p-4 bg-green-50 rounded-lg border border-green-200">
+                            <div class="text-xs text-gray-500 mb-1">속도 일관성</div>
+                            <div class="text-2xl font-bold text-green-600">${scores.speedConsistency.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.speedConsistency).color}">${getGrade(scores.speedConsistency).grade}</div>
+                        </div>
+                        <div class="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                            <div class="text-xs text-gray-500 mb-1">집중력</div>
+                            <div class="text-2xl font-bold text-yellow-600">${scores.focus.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.focus).color}">${getGrade(scores.focus).grade}</div>
+                        </div>
+                        <div class="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                            <div class="text-xs text-gray-500 mb-1">학습력</div>
+                            <div class="text-2xl font-bold text-indigo-600">${scores.learning.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.learning).color}">${getGrade(scores.learning).grade}</div>
+                        </div>
+                        <div class="p-4 bg-red-50 rounded-lg border border-red-200">
+                            <div class="text-xs text-gray-500 mb-1">근력/지구력</div>
+                            <div class="text-2xl font-bold text-red-600">${scores.strength.toFixed(0)}</div>
+                            <div class="text-xs font-semibold ${getGrade(scores.strength).color}">${getGrade(scores.strength).grade}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">📈 시계열 분석 (3개 그래프)</h3>
+
+                    <!-- 동작 오차 그래프 -->
+                    <div class="mb-4">
+                        <h4 class="text-lg font-semibold text-gray-600 mb-2">🎯 동작 오차 (move_err)</h4>
+                        <div class="chart-container">
+                            <canvas id="stage${stage}MoveChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 균형 오차 그래프 -->
+                    <div class="mb-4">
+                        <h4 class="text-lg font-semibold text-gray-600 mb-2">⚖️ 균형 오차 (balance_err)</h4>
+                        <div class="chart-container">
+                            <canvas id="stage${stage}BalanceChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 속도 오차 그래프 -->
+                    <div class="mb-4">
+                        <h4 class="text-lg font-semibold text-gray-600 mb-2">⏱️ 속도 오차 (speed_err)</h4>
+                        <div class="chart-container">
+                            <canvas id="stage${stage}SpeedChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 레이더 차트 렌더링
+            const ctx = document.getElementById(`stage${stage}RadarChart`).getContext('2d');
+            if (charts[`stage${stage}Radar`]) {
+                charts[`stage${stage}Radar`].destroy();
+            }
+
+            charts[`stage${stage}Radar`] = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['동작 정확도', '균형 능력', '속도 일관성', '집중력', '학습력', '근력/지구력'],
+                    datasets: [{
+                        label: `Stage ${stage} (BPM ${data.bpm})`,
+                        data: [scores.movement, scores.balance, scores.speedConsistency, scores.focus, scores.learning, scores.strength],
+                        fill: true,
+                        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                        borderColor: 'rgb(139, 92, 246)',
+                        pointBackgroundColor: 'rgb(139, 92, 246)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(139, 92, 246)',
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        borderWidth: 3
+                    }, {
+                        label: '정상 범위 (80점)',
+                        data: [80, 80, 80, 80, 80, 80],
+                        fill: true,
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        borderColor: 'rgb(34, 197, 94)',
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { display: true, color: 'rgba(0, 0, 0, 0.1)' },
+                            grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                            pointLabels: { font: { size: 12, weight: 'bold' } },
+                            suggestedMin: 0,
+                            suggestedMax: 100,
+                            ticks: { stepSize: 20, callback: value => value + '점' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'bottom' }
+                    }
+                }
+            });
+
+            // 시계열 그래프 생성
+            createTimeSeriesCharts(stage, moveErrs, balanceErrs, speedErrs);
+        }
+
+        function createTimeSeriesCharts(stage, moveErrs, balanceErrs, speedErrs) {
+            const MOVE_THRESHOLD = 50;
+            const BALANCE_THRESHOLD = 40;
+            const SPEED_THRESHOLD = 30;
+
+            // 프레임 번호를 시간(초)로 변환 (30fps 가정)
+            const fps = 30;
+            const timeLabels = moveErrs.map((_, i) => (i / fps).toFixed(1));
+
+            // 1. 동작 오차 그래프
+            const ctx1 = document.getElementById(`stage${stage}MoveChart`).getContext('2d');
+            if (charts[`stage${stage}Move`]) {
+                charts[`stage${stage}Move`].destroy();
+            }
+
+            charts[`stage${stage}Move`] = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: '동작 오차 (낮을수록 정확)',
+                        data: moveErrs,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true,
+                        segment: {
+                            borderColor: (ctx) => {
+                                const value = moveErrs[ctx.p0DataIndex];
+                                return value > MOVE_THRESHOLD ? 'rgb(239, 68, 68)' : 'rgb(59, 130, 246)';
+                            }
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { weight: 'bold' } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '오차 값', font: { weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        annotation: {
+                            annotations: {
+                                threshold: {
+                                    type: 'line',
+                                    yMin: MOVE_THRESHOLD,
+                                    yMax: MOVE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 기준 (${MOVE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: 0,
+                                    yMax: MOVE_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 2. 균형 오차 그래프
+            const ctx2 = document.getElementById(`stage${stage}BalanceChart`).getContext('2d');
+            if (charts[`stage${stage}Balance`]) {
+                charts[`stage${stage}Balance`].destroy();
+            }
+
+            charts[`stage${stage}Balance`] = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: '균형 오차 (0에 가까울수록 좋음)',
+                        data: balanceErrs,
+                        borderColor: 'rgb(168, 85, 247)',
+                        backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true,
+                        segment: {
+                            borderColor: (ctx) => {
+                                const value = Math.abs(balanceErrs[ctx.p0DataIndex]);
+                                return value > BALANCE_THRESHOLD ? 'rgb(239, 68, 68)' : 'rgb(168, 85, 247)';
+                            }
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { weight: 'bold' } }
+                        },
+                        y: {
+                            title: { display: true, text: '균형 오차 값', font: { weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        annotation: {
+                            annotations: {
+                                centerLine: {
+                                    type: 'line',
+                                    yMin: 0,
+                                    yMax: 0,
+                                    borderColor: 'rgba(0, 0, 0, 0.5)',
+                                    borderWidth: 2,
+                                    label: {
+                                        content: '완벽한 균형 (0)',
+                                        display: true,
+                                        position: 'start',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdTop: {
+                                    type: 'line',
+                                    yMin: BALANCE_THRESHOLD,
+                                    yMax: BALANCE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (+${BALANCE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdBottom: {
+                                    type: 'line',
+                                    yMin: -BALANCE_THRESHOLD,
+                                    yMax: -BALANCE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (-${BALANCE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: -BALANCE_THRESHOLD,
+                                    yMax: BALANCE_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 3. 속도 오차 그래프
+            const ctx3 = document.getElementById(`stage${stage}SpeedChart`).getContext('2d');
+            if (charts[`stage${stage}Speed`]) {
+                charts[`stage${stage}Speed`].destroy();
+            }
+
+            charts[`stage${stage}Speed`] = new Chart(ctx3, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: '속도 오차 (일정할수록 좋음)',
+                        data: speedErrs,
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true,
+                        segment: {
+                            borderColor: (ctx) => {
+                                const value = Math.abs(speedErrs[ctx.p0DataIndex]);
+                                return value > SPEED_THRESHOLD ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)';
+                            }
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { weight: 'bold' } }
+                        },
+                        y: {
+                            title: { display: true, text: '속도 오차 값', font: { weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        annotation: {
+                            annotations: {
+                                thresholdTop: {
+                                    type: 'line',
+                                    yMin: SPEED_THRESHOLD,
+                                    yMax: SPEED_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (+${SPEED_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdBottom: {
+                                    type: 'line',
+                                    yMin: -SPEED_THRESHOLD,
+                                    yMax: -SPEED_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (-${SPEED_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: -SPEED_THRESHOLD,
+                                    yMax: SPEED_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createOverlayTimeSeriesCharts(stage, stageDataList) {
+            const MOVE_THRESHOLD = 50;
+            const BALANCE_THRESHOLD = 40;
+            const SPEED_THRESHOLD = 30;
+
+            // 색상 팔레트 (BPM별)
+            const colors = [
+                { border: 'rgb(59, 130, 246)', bg: 'rgba(59, 130, 246, 0.2)' },  // 파란색
+                { border: 'rgb(239, 68, 68)', bg: 'rgba(239, 68, 68, 0.2)' }     // 빨간색
+            ];
+
+            // 1. 동작 오차 중첩 그래프
+            const ctx1 = document.getElementById(`stage${stage}MoveChart`).getContext('2d');
+            if (charts[`stage${stage}Move`]) {
+                charts[`stage${stage}Move`].destroy();
+            }
+
+            // BPM 기반 시간 계산
+            const moveDatasets = stageDataList.map((item, idx) => {
+                let moveErrs = parseArrayField(item.data.move_err);
+                moveErrs = trimPrepAndFinish(moveErrs, 150); // 준비/마무리 자세 제거
+                return {
+                    label: `BPM ${item.bpm}`,
+                    data: moveErrs,
+                    borderColor: colors[idx % colors.length].border,
+                    backgroundColor: colors[idx % colors.length].bg,
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false
+                };
+            });
+
+            // 시간 레이블 생성 (BPM 기준, 트리밍 후 데이터 길이 기준)
+            const maxLength = Math.max(...stageDataList.map(item => {
+                let arr = parseArrayField(item.data.move_err);
+                return trimPrepAndFinish(arr, 150).length;
+            }));
+            const firstBpm = stageDataList[0].bpm;
+            const secondsPerBeat = 60 / firstBpm; // BPM 80 → 0.75초, BPM 100 → 0.6초
+            const timeLabels = Array.from({length: maxLength}, (_, i) => (i * secondsPerBeat).toFixed(1));
+
+            charts[`stage${stage}Move`] = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: moveDatasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { size: 14, weight: 'bold' } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '오차 값', font: { size: 14, weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { font: { size: 12, weight: 'bold' } }
+                        },
+                        annotation: {
+                            annotations: {
+                                threshold: {
+                                    type: 'line',
+                                    yMin: MOVE_THRESHOLD,
+                                    yMax: MOVE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 기준 (${MOVE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: 0,
+                                    yMax: MOVE_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 2. 균형 오차 중첩 그래프
+            const ctx2 = document.getElementById(`stage${stage}BalanceChart`).getContext('2d');
+            if (charts[`stage${stage}Balance`]) {
+                charts[`stage${stage}Balance`].destroy();
+            }
+
+            const balanceDatasets = stageDataList.map((item, idx) => {
+                let balanceErrs = parseArrayField(item.data.balance_err);
+                balanceErrs = trimPrepAndFinish(balanceErrs, 150); // 준비/마무리 자세 제거
+                return {
+                    label: `BPM ${item.bpm}`,
+                    data: balanceErrs,
+                    borderColor: colors[idx % colors.length].border,
+                    backgroundColor: colors[idx % colors.length].bg,
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false
+                };
+            });
+
+            charts[`stage${stage}Balance`] = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: balanceDatasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { size: 14, weight: 'bold' } }
+                        },
+                        y: {
+                            title: { display: true, text: '균형 오차 값', font: { size: 14, weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { font: { size: 12, weight: 'bold' } }
+                        },
+                        annotation: {
+                            annotations: {
+                                centerLine: {
+                                    type: 'line',
+                                    yMin: 0,
+                                    yMax: 0,
+                                    borderColor: 'rgba(0, 0, 0, 0.5)',
+                                    borderWidth: 2,
+                                    label: {
+                                        content: '완벽한 균형 (0)',
+                                        display: true,
+                                        position: 'start',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdTop: {
+                                    type: 'line',
+                                    yMin: BALANCE_THRESHOLD,
+                                    yMax: BALANCE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (+${BALANCE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdBottom: {
+                                    type: 'line',
+                                    yMin: -BALANCE_THRESHOLD,
+                                    yMax: -BALANCE_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (-${BALANCE_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: -BALANCE_THRESHOLD,
+                                    yMax: BALANCE_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 3. 속도 오차 중첩 그래프
+            const ctx3 = document.getElementById(`stage${stage}SpeedChart`).getContext('2d');
+            if (charts[`stage${stage}Speed`]) {
+                charts[`stage${stage}Speed`].destroy();
+            }
+
+            const speedDatasets = stageDataList.map((item, idx) => {
+                let speedErrs = parseArrayField(item.data.speed_err);
+                speedErrs = trimPrepAndFinish(speedErrs, 150); // 준비/마무리 자세 제거
+                return {
+                    label: `BPM ${item.bpm}`,
+                    data: speedErrs,
+                    borderColor: colors[idx % colors.length].border,
+                    backgroundColor: colors[idx % colors.length].bg,
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    fill: false
+                };
+            });
+
+            charts[`stage${stage}Speed`] = new Chart(ctx3, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: speedDatasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '시간 (초)', font: { size: 14, weight: 'bold' } }
+                        },
+                        y: {
+                            title: { display: true, text: '속도 오차 값', font: { size: 14, weight: 'bold' } },
+                            ticks: { callback: value => value.toFixed(0) }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { font: { size: 12, weight: 'bold' } }
+                        },
+                        annotation: {
+                            annotations: {
+                                thresholdTop: {
+                                    type: 'line',
+                                    yMin: SPEED_THRESHOLD,
+                                    yMax: SPEED_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (+${SPEED_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                thresholdBottom: {
+                                    type: 'line',
+                                    yMin: -SPEED_THRESHOLD,
+                                    yMax: -SPEED_THRESHOLD,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: `경고 (-${SPEED_THRESHOLD})`,
+                                        display: true,
+                                        position: 'end',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                        color: 'white'
+                                    }
+                                },
+                                goodZone: {
+                                    type: 'box',
+                                    yMin: -SPEED_THRESHOLD,
+                                    yMax: SPEED_THRESHOLD,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                                    borderWidth: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // BPM 필터 이벤트
+        document.querySelectorAll('.bpm-filter').forEach(checkbox => {
+            checkbox.addEventListener('change', renderOverviewTab);
+        });
+    </script>
+</body>
+</html>
