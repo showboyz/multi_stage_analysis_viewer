@@ -91,6 +91,14 @@
         <div id="tab-content" class="bg-white rounded-b-2xl shadow-2xl p-8" style="display: none;">
             <!-- 전체 비교 탭 -->
             <div id="overview-tab" class="tab-pane">
+                <!-- 스노비 스테이지 정보 -->
+                <div id="snooby-stages-info" class="mb-8" style="display: none;">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">🎯 스테이지 구성</h3>
+                    <div id="stages-info-content" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- 동적으로 생성됨 -->
+                    </div>
+                </div>
+
                 <!-- 전체 평균 -->
                 <div class="mb-8">
                     <h3 class="text-2xl font-bold text-gray-800 mb-4">🏥 6개 평가 영역 전체 평균</h3>
@@ -189,6 +197,109 @@
         let allData = [];
         let charts = {};
 
+        // 스노비별 Stage 정의 (generate_html_report.py에서 가져옴)
+        const SNOOBY_STAGES = {
+            1: {
+                "name": "스노비 1",
+                "stages": [
+                    {"stage": 1, "name": "양팔 교차로 앞으로 흔들기", "type": "Upper Limb Cross-Pattern Movement"},
+                    {"stage": 2, "name": "양팔 들고 좌우로 굽히기", "type": "Bilateral Lateral Flexion Movement"},
+                    {"stage": 3, "name": "양팔 교대로 위로 올리기", "type": "Alternating Shoulder Elevation"}
+                ]
+            },
+            2: {
+                "name": "스노비 2",
+                "stages": [
+                    {"stage": 1, "name": "교차로 V자를 그리며 흔들기", "type": "Cross V-Shape Movement"},
+                    {"stage": 2, "name": "교차로 A자를 그리며 흔들기", "type": "Cross A-Shape Movement"},
+                    {"stage": 3, "name": "교차로 복합 동작", "type": "Cross Combined Movement"}
+                ]
+            },
+            3: {
+                "name": "스노비 3",
+                "stages": [
+                    {"stage": 1, "name": "Step 상태에서 팔 움직이기", "type": "Step Arm Movement"},
+                    {"stage": 2, "name": "Step 반대 상태에서 팔 움직이기", "type": "Opposite Step Arm Movement"},
+                    {"stage": 3, "name": "Step 변형 동작", "type": "Step Variation Movement"}
+                ]
+            },
+            4: {
+                "name": "스노비 4",
+                "stages": [
+                    {"stage": 1, "name": "왼팔 수평, 오른팔 앞으로", "type": "Left Horizontal Right Forward"},
+                    {"stage": 2, "name": "오른팔 수평, 왼팔 앞으로", "type": "Right Horizontal Left Forward"},
+                    {"stage": 3, "name": "왼팔 수평, 오른팔 아래로", "type": "Left Horizontal Right Down"},
+                    {"stage": 4, "name": "오른팔 수평, 왼팔 아래로", "type": "Right Horizontal Left Down"}
+                ]
+            },
+            5: {
+                "name": "스노비 5",
+                "stages": [
+                    {"stage": 1, "name": "발 움직임 복합 동작", "type": "Complex Foot Movement"},
+                    {"stage": 2, "name": "발 움직임 변형 동작", "type": "Varied Foot Movement"},
+                    {"stage": 3, "name": "발 움직임 응용 동작", "type": "Advanced Foot Movement"}
+                ]
+            },
+            6: {
+                "name": "스노비 6",
+                "stages": [
+                    {"stage": 1, "name": "다리 앞으로 뻗기", "type": "Forward Leg Extension"},
+                    {"stage": 2, "name": "다리 옆으로 벌리기", "type": "Side Leg Extension"},
+                    {"stage": 3, "name": "다리 대각선 앞으로", "type": "Diagonal Leg Extension"}
+                ]
+            },
+            7: {
+                "name": "스노비 7",
+                "stages": [
+                    {"stage": 1, "name": "복합 동작 1", "type": "Complex Movement 1"},
+                    {"stage": 2, "name": "복합 동작 2", "type": "Complex Movement 2"},
+                    {"stage": 3, "name": "복합 동작 3", "type": "Complex Movement 3"}
+                ]
+            },
+            8: {
+                "name": "스노비 8",
+                "stages": [
+                    {"stage": 1, "name": "한쪽 다리 앞, 다른 다리 위로", "type": "One Leg Forward Other Up"},
+                    {"stage": 2, "name": "한쪽 다리 옆, 다른 다리 위로", "type": "One Leg Side Other Up"},
+                    {"stage": 3, "name": "정자세에서 다리 올리기", "type": "Standing Leg Lift"}
+                ]
+            },
+            9: {
+                "name": "스노비 9",
+                "stages": [
+                    {"stage": 1, "name": "복합 동작 조합 1", "type": "Combined Movement 1"},
+                    {"stage": 2, "name": "복합 동작 조합 2", "type": "Combined Movement 2"},
+                    {"stage": 3, "name": "복합 동작 조합 3", "type": "Combined Movement 3"}
+                ]
+            },
+            10: {
+                "name": "스노비 10",
+                "stages": [
+                    {"stage": 1, "name": "안쪽 복합 동작", "type": "Inner Combined Movement"},
+                    {"stage": 2, "name": "바깥쪽 복합 동작", "type": "Outer Combined Movement"},
+                    {"stage": 3, "name": "대각선 복합 동작", "type": "Diagonal Combined Movement"}
+                ]
+            },
+            11: {
+                "name": "스노비 11",
+                "stages": [
+                    {"stage": 1, "name": "팔 벌리기 + 무릎 바깥쪽", "type": "Arm Spread Knees Out"},
+                    {"stage": 2, "name": "팔 반대 + 무릎 안쪽", "type": "Arm Opposite Knees In"},
+                    {"stage": 3, "name": "팔 내리기 + 무릎 바깥쪽", "type": "Arm Down Knees Out"},
+                    {"stage": 4, "name": "팔 반대 내리기 + 무릎 안쪽", "type": "Arm Opposite Down Knees In"}
+                ]
+            },
+            12: {
+                "name": "스노비 12",
+                "stages": [
+                    {"stage": 1, "name": "왼손으로 오른쪽 무릎 터치", "type": "Left Hand Touch Right Knee"},
+                    {"stage": 2, "name": "오른손으로 왼쪽 무릎 터치", "type": "Right Hand Touch Left Knee"},
+                    {"stage": 3, "name": "왼손으로 오른쪽 발끝 터치", "type": "Left Hand Touch Right Toe"},
+                    {"stage": 4, "name": "오른손으로 왼쪽 발끝 터치", "type": "Right Hand Touch Left Toe"}
+                ]
+            }
+        };
+
         // 파일 업로드 핸들러
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -207,13 +318,51 @@
             reader.readAsText(file);
         });
 
+        // 스노비 번호 자동 감지
+        function extractSnoobyNumber(data) {
+            const patientInfo = data[0];
+            const chapter = patientInfo.chapter || patientInfo.test_name || '';
+
+            const match = chapter.match(/스[모노]비\s*(\d+)/);
+            if (match) {
+                return parseInt(match[1]);
+            }
+            return null;
+        }
+
+        // 스테이지 정보 가져오기
+        function getStageInfo(snoobyNum, stageNum) {
+            if (!snoobyNum || !SNOOBY_STAGES[snoobyNum]) return null;
+
+            const snoobyData = SNOOBY_STAGES[snoobyNum];
+            const stageData = snoobyData.stages.find(s => s.stage === stageNum);
+
+            if (stageData) {
+                return {
+                    name: stageData.name,
+                    type: stageData.type,
+                    snoobyName: snoobyData.name
+                };
+            }
+            return null;
+        }
+
         function processData() {
             if (allData.length === 0) return;
 
             // 환자 정보 표시
             const first = allData[0];
+            const snoobyNum = extractSnoobyNumber(allData);
+
             document.getElementById('patient-name').textContent = first.name || '-';
-            document.getElementById('game-name').textContent = first.chapter || first.test_name || '-';
+
+            // 스노비 정보가 있으면 표시
+            let gameName = first.chapter || first.test_name || '-';
+            if (snoobyNum && SNOOBY_STAGES[snoobyNum]) {
+                gameName = `${SNOOBY_STAGES[snoobyNum].name} (${gameName})`;
+            }
+            document.getElementById('game-name').textContent = gameName;
+
             document.getElementById('total-stages').textContent = allData.length + '개';
             document.getElementById('patient-info').style.display = 'block';
 
@@ -344,7 +493,41 @@
             return { grade: 'D', color: 'text-red-600', bg: 'bg-red-50' };
         }
 
+        function renderStagesInfo() {
+            const snoobyNum = extractSnoobyNumber(allData);
+
+            if (!snoobyNum || !SNOOBY_STAGES[snoobyNum]) {
+                document.getElementById('snooby-stages-info').style.display = 'none';
+                return;
+            }
+
+            const snoobyData = SNOOBY_STAGES[snoobyNum];
+            const stagesInfoContent = document.getElementById('stages-info-content');
+
+            let html = '';
+            snoobyData.stages.forEach(stageData => {
+                html += `
+                    <div class="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-8 h-8 bg-purple-500 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                                ${stageData.stage}
+                            </div>
+                            <div class="font-bold text-gray-800">Stage ${stageData.stage}</div>
+                        </div>
+                        <div class="text-sm font-semibold text-purple-900 mb-1">${stageData.name}</div>
+                        <div class="text-xs text-gray-600">${stageData.type}</div>
+                    </div>
+                `;
+            });
+
+            stagesInfoContent.innerHTML = html;
+            document.getElementById('snooby-stages-info').style.display = 'block';
+        }
+
         function renderOverviewTab() {
+            // 스테이지 정보 표시
+            renderStagesInfo();
+
             // 모든 레코드의 점수 계산
             const allScores = allData.map((record, idx) => {
                 console.log(`레코드 ${idx}:`, record);
@@ -588,11 +771,28 @@
             const firstData = stageDataList[0].data;
             const firstMoveErrs = parseArrayField(firstData.move_err);
 
+            // 스노비 번호 감지 및 스테이지 정보 가져오기
+            const snoobyNum = extractSnoobyNumber(allData);
+            const stageInfo = getStageInfo(snoobyNum, stage);
+
+            // 스테이지 설명 HTML 생성
+            let stageDescriptionHtml = '';
+            if (stageInfo) {
+                stageDescriptionHtml = `
+                    <div class="col-span-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow border-l-4 border-purple-500">
+                        <div class="text-xs text-purple-600 font-semibold mb-1">🎯 Stage ${stage} 동작 설명</div>
+                        <div class="text-lg font-bold text-gray-800">${stageInfo.name}</div>
+                        <div class="text-sm text-gray-600 mt-1">${stageInfo.type}</div>
+                    </div>
+                `;
+            }
+
             container.innerHTML = `
                 <!-- 기본 정보 -->
                 <div class="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
                     <h3 class="text-xl font-bold text-gray-800 mb-4">📋 기본 정보</h3>
                     <div class="grid grid-cols-4 gap-4">
+                        ${stageDescriptionHtml}
                         <div class="p-4 bg-white rounded-lg shadow">
                             <div class="text-xs text-gray-500 mb-1">비교 데이터</div>
                             <div class="text-2xl font-bold text-blue-600">${stageDataList.length}개</div>
